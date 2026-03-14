@@ -26,4 +26,4 @@ The source code can be found under the **src** folder; it's mostly a fully self-
 
 
 Makes use of: https://commons.wikimedia.org/wiki/File:Earth_icon_2.png \
-LinkedIn article: https://xxx.xxx/
+LinkedIn article: https://www.linkedin.com/pulse/happy-pi-day-2026-pi-based-2d-orbital-mechanics-cristiano-monteiro-qjydf
