@@ -2,7 +2,7 @@
   <h1>¸,ø¤°`°¤ø,¸¸,ø¤°`°¤ø,¸  OrbiPi  ¸,ø¤°`°¤ø,¸¸,ø¤°`°¤ø,¸</h1>
 </div>
 
-## A Pi-Based Orbital Simulator
+## A Pi-Based Orbital Simulator For 2026 Pi Day
 
 A 2D orbital mechanics simulator with a twist: it demonstrates how changing the value of Pi would affect satellite navigation and orbital stability.
 
