@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="icon" type="image/png" href="favicon-32x32.png">
+    <title>Orbital Pi Simulator</title>
+    <style>
+        body { margin: 0; background: #050505; color: white; font-family: sans-serif; overflow: hidden; touch-action: none; }
+        canvas { display: block; }
+        #ui-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; display: flex; flex-direction: column; align-items: center;
+            padding: 10px; box-sizing: border-box; text-align: center;
+        }
+        .controls { 
+            pointer-events: auto; 
+            background: rgba(0,0,0,0.6); 
+            padding: 10px 20px; 
+            border-radius: 8px;
+            margin-top: 10px; 
+        }
+        h1 { margin: 5px 0; font-size: 24px; }
+        p { margin: 5px 0 10px 0; font-size: 16px; }
+        input { padding: 8px; font-size: 16px; width: 150px; text-align: center; border: none; border-radius: 4px; }
+        button { padding: 8px 16px; font-size: 16px; cursor: pointer; background: #4a90e2; color: white; border: none; border-radius: 4px; margin-left: 5px; }
+        .footer { position: absolute; bottom: 20px; font-size: 14px; pointer-events: auto; opacity: 0.7; }
+        a { color: #4a90e2; text-decoration: none; }
+    </style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+
+<div id="ui-layer">
+    <div class="controls">
+        <h1 id="title">Orbital Pi Simulator</h1>
+        <p>Input an arbitrary number for pi and see the effect:</p>
+        <input type="number" id="piInput" step="any" value="3.1415926535">
+        <button id="okButton">OK</button>
+    </div>
+    <div class="footer">
+        <a href="mailto:cristianomonteiro@gmail.com">cristianomonteiro@gmail.com</a> - Source: <a href="https://github.com/Montecri/OrbiPi" target="_blank">GitHub</a>
+    </div>
+</div>
+
+<script>
+/** * VECTOR MATH HELPER */
+class Vec2 {
+    constructor(x, y) { this.x = x; this.y = y; }
+    length() { return Math.sqrt(this.x * this.x + this.y * this.y); }
+    add(v) { return new Vec2(this.x + v.x, this.y + v.y); }
+    sub(v) { return new Vec2(this.x - v.x, this.y - v.y); }
+    mul(s) { return new Vec2(this.x * s, this.y * s); }
+    div(s) { return new Vec2(this.x / s, this.y / s); }
+    normalized() { let l = this.length(); return l === 0 ? new Vec2(0,0) : this.div(l); }
+}
+
+/** * CONSTANTS & CONFIGS */
+const MU = 3.986004418e14;
+const EARTH_RADIUS_M = 6371000.0;
+const ATMOSPHERE_HEIGHT_M = 120000.0;
+const REAL_PI = Math.PI;
+
+// Ajustes da Explosão (Relativos ao raio da terra)
+const EXPLOSION_MAX_RATIO = 0.30; // 25% do raio da terra
+const EXPLOSION_SPEED_RATIO = 0.1; // Velocidade de crescimento proporcional
+
+/** * STATE */
+let canvas = document.getElementById('gameCanvas');
+let ctx = canvas.getContext('2d');
+let navPi = REAL_PI;
+let timeScale = 300.0;
+let navigationGain = 0.0002;
+let satelliteAltitudeM = 1500000.0;
+
+let posM = new Vec2(0, 0);
+let velM = new Vec2(0, 0);
+let trail = [];
+let MAX_TRAIL_POINTS = 1500;
+let exploded = false;
+let explosionRadiusPx = 0;
+let metersToPixels = 0;
+let earthRadiusPx = 120.0;
+
+const earthImg = new Image();
+earthImg.src = 'Earth_icon_2.png';
+
+/** * CORE LOGIC */
+function initOrbit() {
+    let r = EARTH_RADIUS_M + satelliteAltitudeM;
+    let orbitalSpeed = Math.sqrt(MU / r);
+    posM = new Vec2(r, 0);
+    velM = new Vec2(0, orbitalSpeed);
+    trail = [];
+    exploded = false;
+    explosionRadiusPx = 0;
+}
+
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    let smallestDimension = Math.min(canvas.width, canvas.height);
+    
+    // Raio da terra dinâmico
+    earthRadiusPx = smallestDimension * 0.20; 
+    if (earthRadiusPx < 60) earthRadiusPx = 60;
+    
+    metersToPixels = earthRadiusPx / EARTH_RADIUS_M;
+}
+
+function acceleration(pos) {
+    let r = pos.length();
+    return pos.mul(-MU / Math.pow(r, 3));
+}
+
+function verletStep(dt) {
+
+    // acceleration at start of step
+    let a0 = acceleration(posM)
+
+    // update position
+    posM = posM
+        .add(velM.mul(dt))
+        .add(a0.mul(0.5 * dt * dt))
+
+    // acceleration at new position
+    let a1 = acceleration(posM)
+
+    // update velocity
+    velM = velM.add(
+        a0.add(a1).mul(0.5 * dt)
+    )
+}
+
+function applyNavigation(dt) {
+
+    let r = posM.length()
+
+    // --- Real orbital period (true physics)
+    let T = Math.sqrt((4 * REAL_PI * REAL_PI * r * r * r) / MU)
+
+    // --- Satellite's believed angular velocity (uses navPi)
+    let omegaTarget = (2 * navPi) / T
+
+    // --- Current angular velocity of the satellite
+    let tangent = velM.normalized()
+    let omegaCurrent = (posM.x * velM.y - posM.y * velM.x) / (r * r)
+
+    // --- Error in orbital rateS
+    let omegaError = omegaTarget - omegaCurrent
+
+    // --- Clamp runaway thrust, This prevents extreme spikes
+    //omegaError = Math.max(-0.01, Math.min(0.01, omegaError))
+
+    // --- Apply small tangential correction
+    let accel = tangent.mul(omegaError * r * navigationGain)
+
+    velM = velM.add(accel.mul(dt))
+}
+
+function update(delta) {
+    if (exploded) {
+        explosionRadiusPx += (earthRadiusPx * EXPLOSION_SPEED_RATIO) * delta;
+        return;
+    }
+
+    let dt = delta * timeScale;
+
+    let steps = 20
+    let stepDt = dt / steps
+
+    for (let i = 0; i < steps; i++) {
+        // 1. UNIVERSAL PHYSICS (Uses Real Math/Constants)
+        verletStep(stepDt)
+        // 2. SATELLITE NAVIGATION (Uses Your Pi)
+        applyNavigation(stepDt)
+    }
+
+    // 3. ESCAPE VELOCITY CHECK
+    // If the satellite is more than 10x Earth's radius away, it has escaped.
+    if (posM.length() > EARTH_RADIUS_M * 10) {
+        //alert("Satellite has escaped Earth's orbit due to navigation error!");
+        initOrbit();
+        return;
+    }
+
+    // 4. TRAIL & COLLISION
+    trail.push(new Vec2(posM.x, posM.y));
+    if (trail.length > MAX_TRAIL_POINTS) trail.shift();
+
+    if (posM.length() <= EARTH_RADIUS_M) {
+        exploded = true;
+        posM = posM.normalized().mul(EARTH_RADIUS_M); 
+    }
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    let centerX = canvas.width / 2;
+    let centerY = canvas.height / 2;
+
+    // Atmosphere
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, earthRadiusPx + ATMOSPHERE_HEIGHT_M * metersToPixels, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(128, 180, 255, 0.15)';
+    ctx.fill();
+
+    // Earth
+    if (earthImg.complete) {
+        ctx.drawImage(earthImg, centerX - earthRadiusPx, centerY - earthRadiusPx, earthRadiusPx * 2, earthRadiusPx * 2);
+    } else {
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, earthRadiusPx, 0, Math.PI * 2);
+        ctx.fillStyle = '#1a4a9e';
+        ctx.fill();
+    }
+
+    // Trail
+    trail.forEach((p, i) => {
+        let alpha = i / trail.length;
+        ctx.beginPath();
+        ctx.arc(centerX + p.x * metersToPixels, centerY + p.y * metersToPixels, 1.5, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 0.6})`;
+        ctx.fill();
+    });
+
+    // Satellite and Explosion
+    if (!exploded) {
+        let r = posM.length();
+        let heat = Math.max(0, Math.min(1, 1 - ((r - EARTH_RADIUS_M) / ATMOSPHERE_HEIGHT_M)));
+        let color = `rgb(255, ${50 + heat * 205}, ${50 * (1 - heat)})`;
+        ctx.fillStyle = color;
+        let size = 8;
+        ctx.fillRect(centerX + posM.x * metersToPixels - size/2, centerY + posM.y * metersToPixels - size/2, size, size);
+    } else {
+        ctx.beginPath();
+        ctx.arc(centerX + posM.x * metersToPixels, centerY + posM.y * metersToPixels, explosionRadiusPx, 0, Math.PI * 2);
+        
+        // Explosion Fade-Out
+        let progress = explosionRadiusPx / (earthRadiusPx * EXPLOSION_MAX_RATIO);
+        let alpha = Math.max(0, 0.6 * (1 - progress));
+        ctx.fillStyle = `rgba(255, 128, 0, ${alpha})`;
+        ctx.fill();
+    }
+}
+
+/** * GAME LOOP */
+let lastTime = 0;
+function loop(timestamp) {
+    let dt = (timestamp - lastTime) / 1000;
+    if (dt > 0.1) dt = 0.1;
+    lastTime = timestamp;
+    update(dt);
+    draw();
+    requestAnimationFrame(loop);
+}
+
+const piInput = document.getElementById('piInput');
+function handlePiUpdate() {
+    navPi = parseFloat(piInput.value) || Math.PI;
+    piInput.blur(); 
+    initOrbit();
+}
+
+window.addEventListener('load', () => {
+    piInput.value = Math.PI.toFixed(10);
+    handlePiUpdate();
+});
+
+document.getElementById('okButton').onclick = handlePiUpdate;
+piInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handlePiUpdate(); });
+window.onresize = resize;
+
+resize();
+initOrbit();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
