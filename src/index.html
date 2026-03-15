@@ -1,5 +1,9 @@
 <!-- 
-// Orbital Pi Simulator - Ver 1.1 - Fixed 0 value stable orbit
+// Orbital Pi Simulator
+// 20260315:
+// Ver 1.1 - Fixed 0 value stable orbit
+// Ver 1.2 = Fixed stall on very large negative Pi numbers
+//         - Changed inputbox to only allow nnumbers
 // By Cristiano Monteiro -  For Pi Day 2026
 // Input an arbitrary number for pi and see the effect on a satellite's orbit around Earth! 
 // Uses real physics for the orbit, but the satellite's navigation system tries to maintain an orbit based on your input pi.
@@ -45,7 +49,7 @@
     <div class="controls">
         <h1 id="title">Orbital Pi Simulator</h1>
         <p>Input an arbitrary number for pi and see the effect:</p>
-        <input type="number" id="piInput" step="any" value="3.1415926535">
+        <input type="text" id="piInput" inputmode="decimal" value="3.1415926535">
         <button id="okButton">OK</button>
     </div>
     <div class="footer">
@@ -153,14 +157,16 @@ function applyNavigation(dt) {
     let omegaTarget = (2 * navPi) / T
 
     // --- Current angular velocity of the satellite
-    let tangent = velM.normalized()
+    //let tangent = velM.normalized()
     let omegaCurrent = (posM.x * velM.y - posM.y * velM.x) / (r * r)
 
-    // --- Error in orbital rateS
+    // --- Error in orbital rateS — clamped to prevent extreme values freezing the satellite
     let omegaError = omegaTarget - omegaCurrent
+    let omegaCorrect = (2 * REAL_PI) / T;
+    omegaError = Math.max(-omegaCorrect * 2, Math.min(omegaCorrect * 2, omegaError));
 
     // Tangential direction (perpendicular to position, in direction of travel)
-    //let tangent = new Vec2(-posM.y / r, posM.x / r);
+    let tangent = new Vec2(-posM.y / r, posM.x / r);
 
     // --- Apply small tangential correction
     let accel = tangent.mul(omegaError * r * navigationGain)
@@ -265,16 +271,29 @@ function loop(timestamp) {
 }
 
 const piInput = document.getElementById('piInput');
+
 function handlePiUpdate() {
-    let parsed = parseFloat(piInput.value);
+    let raw = piInput.value.trim();
+    // Remove any character that isn't a digit, minus sign, or decimal point
+    let sanitized = raw.replace(/[^0-9.\-]/g, '');
+    let parsed = parseFloat(sanitized);
     navPi = isNaN(parsed) ? Math.PI : parsed;
-    piInput.blur(); 
+    // Show the cleaned value back in the box
+    piInput.value = isNaN(parsed) ? Math.PI.toFixed(10) : sanitized;
+    piInput.blur();
     initOrbit();
 }
 
 window.addEventListener('load', () => {
     piInput.value = Math.PI.toFixed(10);
     handlePiUpdate();
+});
+
+piInput.addEventListener('keydown', (e) => {
+    // Allow: digits, minus, decimal point, backspace, delete, arrows, tab, enter
+    const allowed = /[0-9.\-]/.test(e.key) || 
+        ['Backspace','Delete','ArrowLeft','ArrowRight','Tab','Enter'].includes(e.key);
+    if (!allowed) e.preventDefault();
 });
 
 document.getElementById('okButton').onclick = handlePiUpdate;
