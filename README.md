@@ -24,6 +24,8 @@ The script uses the Velocity Verlet symplectic integrator for its simulation (wh
 
 The source code can be found under the **src** folder; it's mostly a fully self-contained code, with only the earth image and the favicon as external files.
 
+Enjoy!
 
 Makes use of: https://commons.wikimedia.org/wiki/File:Earth_icon_2.png \
+Hackaday article: https://hackaday.com/2026/03/14/take-pi-for-a-spin-in-this-orbital-simulator/ \
 LinkedIn article: https://www.linkedin.com/pulse/happy-pi-day-2026-pi-based-2d-orbital-mechanics-cristiano-monteiro-qjydf
