@@ -1,3 +1,12 @@
+<!-- 
+// Orbital Pi Simulator - Ver 1.1 - Fixed 0 value stable orbit
+// By Cristiano Monteiro -  For Pi Day 2026
+// Input an arbitrary number for pi and see the effect on a satellite's orbit around Earth! 
+// Uses real physics for the orbit, but the satellite's navigation system tries to maintain an orbit based on your input pi.
+// If your pi is close to the real value, the satellite will maintain a stable orbit.
+// If it's too far off, the satellite will either spiral into Earth or escape into space!
+-->
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -150,12 +159,11 @@ function applyNavigation(dt) {
     // --- Error in orbital rateS
     let omegaError = omegaTarget - omegaCurrent
 
-    // --- Clamp runaway thrust, This prevents extreme spikes
-    //omegaError = Math.max(-0.01, Math.min(0.01, omegaError))
+    // Tangential direction (perpendicular to position, in direction of travel)
+    //let tangent = new Vec2(-posM.y / r, posM.x / r);
 
     // --- Apply small tangential correction
     let accel = tangent.mul(omegaError * r * navigationGain)
-
     velM = velM.add(accel.mul(dt))
 }
 
@@ -258,7 +266,8 @@ function loop(timestamp) {
 
 const piInput = document.getElementById('piInput');
 function handlePiUpdate() {
-    navPi = parseFloat(piInput.value) || Math.PI;
+    let parsed = parseFloat(piInput.value);
+    navPi = isNaN(parsed) ? Math.PI : parsed;
     piInput.blur(); 
     initOrbit();
 }
